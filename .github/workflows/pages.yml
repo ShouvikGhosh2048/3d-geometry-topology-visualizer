@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # repo checkout
       - name: Download Odin (nightly)
-        run: wget -qO- https://github.com/odin-lang/Odin/releases/download/dev-2025-01/odin-ubuntu-amd64-dev-2025-01.zip > odin.zip && unzip odin.zip && tar -xzf- dist.tar.gz # https://askubuntu.com/a/86852
+        run: wget -qO- https://github.com/odin-lang/Odin/releases/download/dev-2025-01/odin-ubuntu-amd64-dev-2025-01.zip > odin.zip && unzip odin.zip && tar -xf dist.tar.gz # https://askubuntu.com/a/86852
       - name: Download emscripten and build
         run: bash build_github_pages.sh # https://stackoverflow.com/a/74346752
       - name: Deploy
