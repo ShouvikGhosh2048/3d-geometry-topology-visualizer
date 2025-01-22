@@ -1,0 +1,33 @@
+# Taken from https://github.com/emilk/eframe_template/blob/main/.github/workflows/pages.yml
+name: Github Pages
+
+# By default, runs if you push to main. keeps your deployed app in sync with main branch.
+on:
+  push:
+    branches:
+      - main
+# to only run when you do a new github release, comment out above part and uncomment the below trigger.
+# on:
+#   release:
+#     types:
+#       - published
+
+permissions:
+  contents: write # for committing to gh-pages branch.
+
+jobs:
+  build-github-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # repo checkout
+      - name: Download Odin (nightly)
+        run: wget -qO- https://github.com/odin-lang/Odin/releases/download/dev-2025-01/odin-ubuntu-amd64-dev-2025-01.zip > odin.zip && unzip odin.zip && tar -xzf- dist.tar.gz # https://askubuntu.com/a/86852
+      - name: Download emscripten and build
+        run: bash build_github_pages.sh # https://stackoverflow.com/a/74346752
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: game_web
+          # this option will not maintain any history of your previous pages deployment
+          # set to false if you want all page build to be committed to your gh-pages branch history
+          single-commit: true
