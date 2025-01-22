@@ -21,7 +21,7 @@ export EMSDK_QUIET=1
 odin-linux-amd64-nightly+2025-01-08/odin build source/main_web -target:freestanding_wasm32 -build-mode:obj -define:RAYLIB_WASM_LIB=env.o -vet -strict-style -o:speed -out:$OUT_DIR/game
 
 files="source/main_web/main_web.c $OUT_DIR/game.wasm.o odin-linux-amd64-nightly+2025-01-08/vendor/raylib/wasm/libraylib.a"
-flags="-sUSE_GLFW=3 -sASYNCIFY -sASSERTIONS -DPLATFORM_WEB --shell-file source/main_web/index_template.html --preload-file assets"
+flags="-sUSE_GLFW=3 -sASSERTIONS --shell-file source/main_web/index_template.html --preload-file assets"
 
 # shellcheck disable=SC2086
 # Add `-g` to `emcc` call to enable debug symbols (works in chrome).
