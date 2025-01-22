@@ -42,8 +42,7 @@ Game_API :: struct {
 	lib: dynlib.Library,
 	init_window: proc(),
 	init: proc(),
-	update: proc(),
-	should_close: proc() -> bool,
+	update: proc() -> bool,
 	shutdown: proc(),
 	shutdown_window: proc(),
 	memory: proc() -> rawptr,
@@ -134,8 +133,9 @@ main :: proc() {
 
 	old_game_apis := make([dynamic]Game_API, default_allocator)
 
-	for !game_api.should_close() {
-		game_api.update()
+	window_open := true
+	for window_open {
+		window_open = game_api.update()
 		force_reload := game_api.force_reload()
 		force_restart := game_api.force_restart()
 		reload := force_reload || force_restart

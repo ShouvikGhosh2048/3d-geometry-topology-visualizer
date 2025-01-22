@@ -5,7 +5,6 @@ Some important procedures are:
 - game_init_window: Opens the window
 - game_init: Sets up the game state
 - game_update: Run once per frame
-- game_should_close: For stopping your game when close button is pressed
 - game_shutdown: Shuts down game and frees memory
 - game_shutdown_window: Closes window
 
@@ -15,8 +14,8 @@ contents of this file is compiled as part of `build/hot_reload/game.dll` (or
 .dylib/.so on mac/linux). In the hot reload cases some other procedures are
 also used in order to facilitate the hot reload functionality:
 
-- game_memory: Run just before a hot reload. That way game_hot_reload.exe has a
-      pointer to the game's memory that it can hand to the new game DLL.
+- game_memory: Run just before a hot reload, so game.exe has a pointer to the
+      game's memory.
 - game_hot_reloaded: Run after a hot reload so that the `g_mem` global
       variable can be set to whatever pointer it was in the old DLL.
 
@@ -102,9 +101,10 @@ draw :: proc() {
 }
 
 @(export)
-game_update :: proc() {
+game_update :: proc() -> bool {
 	update()
 	draw()
+	return !rl.WindowShouldClose()
 }
 
 @(export)
@@ -131,11 +131,6 @@ game_init :: proc() {
 }
 
 @(export)
-game_should_close :: proc() -> bool {
-	return rl.WindowShouldClose()
-}
-
-@(export)
 game_shutdown :: proc() {
 	free(g_mem)
 }
@@ -158,10 +153,6 @@ game_memory_size :: proc() -> int {
 @(export)
 game_hot_reloaded :: proc(mem: rawptr) {
 	g_mem = (^Game_Memory)(mem)
-
-	// Here you can also set your own global variables. A good idea is to make
-	// your global variables into pointers that point to something inside
-	// `g_mem`.
 }
 
 @(export)

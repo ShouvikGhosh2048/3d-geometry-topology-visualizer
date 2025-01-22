@@ -60,10 +60,12 @@ echo Building %EXE%
 odin build source\main_hot_reload -strict-style -vet -debug -out:%EXE% -pdb-name:%OUT_DIR%\main_hot_reload.pdb
 IF %ERRORLEVEL% NEQ 0 exit /b 1
 
-set ODIN_PATH=
-for /f %%i in ('odin root') do set "ODIN_PATH=%%i"
-
 if not exist "raylib.dll" (
+	:: Don't name this one ODIN_ROOT as the odin exe will start using that one then.
+	set ODIN_PATH=
+
+	for /f %%i in ('odin root') do set "ODIN_PATH=%%i"
+
 	if exist "%ODIN_PATH%\vendor\raylib\windows\raylib.dll" (
 		echo raylib.dll not found in current directory. Copying from %ODIN_PATH%\vendor\raylib\windows\raylib.dll
 		copy "%ODIN_PATH%\vendor\raylib\windows\raylib.dll" .
@@ -74,6 +76,7 @@ if not exist "raylib.dll" (
 	)
 )
 
+:: This is for some
 if "%~1"=="run" (
 	echo Running %EXE%...
 	start %EXE%
