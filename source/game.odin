@@ -36,6 +36,7 @@ PIXEL_WINDOW_HEIGHT :: 180
 Game_Memory :: struct {
 	player_pos: rl.Vector2,
 	player_texture: rl.Texture,
+	font: rl.Font,
 	some_number: int,
 }
 
@@ -89,14 +90,10 @@ draw :: proc() {
 	rl.DrawRectangleV({-30, -20}, {10, 10}, rl.GREEN)
 	rl.EndMode2D()
 
-	rl.BeginMode2D(ui_camera())
-
 	// NOTE: `fmt.ctprintf` uses the temp allocator. The temp allocator is
 	// cleared at the end of the frame by the main application, meaning inside
 	// `main_hot_reload.odin`, `main_release.odin` or `main_web_entry.odin`.
-	rl.DrawText(fmt.ctprintf("some_number: %v\nplayer_pos: %v", g_mem.some_number, g_mem.player_pos), 5, 5, 8, rl.WHITE)
-
-	rl.EndMode2D()
+	rl.DrawTextEx(g_mem.font, fmt.ctprintf("FPS: %v", rl.GetFPS()), { 10.0, 10.0 }, 32, 0.0, rl.WHITE)
 
 	rl.EndDrawing()
 }
@@ -125,6 +122,7 @@ game_init :: proc() {
 		// You can put textures, sounds and music in the `assets` folder. Those
 		// files will be part any release or web build.
 		player_texture = rl.LoadTexture("assets/round_cat.png"),
+		font = rl.LoadFontEx("assets/Inter/Inter-VariableFont_opsz,wght.ttf", 32, nil, 0),
 	}
 
 	game_hot_reloaded(g_mem)
