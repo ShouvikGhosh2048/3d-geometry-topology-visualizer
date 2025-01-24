@@ -33,67 +33,123 @@ import rl "vendor:raylib"
 
 PIXEL_WINDOW_HEIGHT :: 180
 
+View :: enum {
+	MOVE,
+	EDIT,
+}
+
 Game_Memory :: struct {
-	player_pos: rl.Vector2,
-	player_texture: rl.Texture,
 	font: rl.Font,
-	some_number: int,
+	camera: rl.Camera3D,
+	cursor: rl.Vector2,
+	hover_index: int,
+	vertices: [dynamic][3]f32,
+	view: View,
 }
 
 g_mem: ^Game_Memory
 
-game_camera :: proc() -> rl.Camera2D {
-	w := f32(rl.GetScreenWidth())
-	h := f32(rl.GetScreenHeight())
-
-	return {
-		zoom = h/PIXEL_WINDOW_HEIGHT,
-		target = g_mem.player_pos,
-		offset = { w/2, h/2 },
-	}
-}
-
-ui_camera :: proc() -> rl.Camera2D {
-	return {
-		zoom = f32(rl.GetScreenHeight())/PIXEL_WINDOW_HEIGHT,
-	}
-}
-
 update :: proc() {
-	input: rl.Vector2
+	if rl.IsCursorHidden() {
+		if g_mem.view == .MOVE {
+			rl.UpdateCameraPro(
+				&g_mem.camera,
+				{},
+				{ rl.GetMouseDelta().x * 0.05, rl.GetMouseDelta().y * 0.05, 0.0 },
+				rl.GetMouseWheelMove() * 2.0,
+			)
 
-	if rl.IsKeyDown(.UP) || rl.IsKeyDown(.W) {
-		input.y -= 1
-	}
-	if rl.IsKeyDown(.DOWN) || rl.IsKeyDown(.S) {
-		input.y += 1
-	}
-	if rl.IsKeyDown(.LEFT) || rl.IsKeyDown(.A) {
-		input.x -= 1
-	}
-	if rl.IsKeyDown(.RIGHT) || rl.IsKeyDown(.D) {
-		input.x += 1
-	}
+			movement: rl.Vector3
+			if rl.IsKeyDown(.W) {
+				movement.x += 1.0
+			}
+			if rl.IsKeyDown(.A) {
+				movement.y -= 1.0
+			}
+			if rl.IsKeyDown(.S) {
+				movement.x -= 1.0
+			}
+			if rl.IsKeyDown(.D) {
+				movement.y += 1.0
+			}
+			if rl.IsKeyDown(.SPACE) {
+				movement.z += 1.0
+			}
+			if rl.IsKeyDown(.LEFT_CONTROL) {
+				movement.z -= 1.0
+			}
+			movement = 0.1 * linalg.normalize0(movement)
+		
+			rl.UpdateCameraPro(&g_mem.camera, movement, {}, 0.0)
+		} else {
+			g_mem.cursor += rl.GetMouseDelta()
+			ray := rl.GetScreenToWorldRay(
+				{f32(rl.GetScreenWidth()) / 2.0 + g_mem.cursor.x, f32(rl.GetScreenHeight()) / 2.0 + g_mem.cursor.y},
+				g_mem.camera,
+			)
 
-	input = linalg.normalize0(input)
-	g_mem.player_pos += input * rl.GetFrameTime() * 100
-	g_mem.some_number += 1
+			g_mem.hover_index = -1
+			min_ray_distance := f32(1e500)
+			for point, i in g_mem.vertices {
+				ray_distance := linalg.vector_dot(point - ray.position, linalg.normalize(ray.direction))
+				point_distance := linalg.length(point - ray.position - ray_distance * linalg.normalize(ray.direction))
+
+				if ray_distance > 0 && point_distance < 0.05 {
+					if ray_distance < min_ray_distance {
+						min_ray_distance = ray_distance
+						g_mem.hover_index = i
+					}
+				}
+			}
+
+			if rl.IsMouseButtonPressed(.LEFT) && g_mem.hover_index == -1 {
+				new_point := ray.position + ray.direction * (-ray.position.y / ray.direction.y)
+				append(&g_mem.vertices, new_point)
+			}
+		}
+
+		if rl.IsKeyPressed(.M) {
+			g_mem.cursor = {}
+			g_mem.hover_index = -1
+			if g_mem.view == .MOVE {
+				g_mem.view = .EDIT
+			} else {
+				g_mem.view = .MOVE
+			}
+		}
+		if rl.IsKeyPressed(.ESCAPE) {
+			rl.EnableCursor()
+		}
+	} else {
+		if rl.IsMouseButtonPressed(.LEFT) {
+			rl.DisableCursor()
+		}
+	}
 }
 
 draw :: proc() {
 	rl.BeginDrawing()
-	rl.ClearBackground(rl.BLACK)
+	rl.ClearBackground(rl.RAYWHITE)
 
-	rl.BeginMode2D(game_camera())
-	rl.DrawTextureEx(g_mem.player_texture, g_mem.player_pos, 0, 1, rl.WHITE)
-	rl.DrawRectangleV({20, 20}, {10, 10}, rl.RED)
-	rl.DrawRectangleV({-30, -20}, {10, 10}, rl.GREEN)
-	rl.EndMode2D()
+	rl.BeginMode3D(g_mem.camera)
+	rl.DrawTriangle3D({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, rl.GRAY)
+	rl.DrawTriangle3D({0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}, rl.GRAY) // TODO: Disable face culling
+	for point, i in g_mem.vertices {
+		color := rl.BLACK
+		if g_mem.hover_index == i {
+			color = rl.RED
+		}
+		rl.DrawSphere(point, 0.05, color)
+	}
+	rl.DrawGrid(50, 1.0)
+	rl.EndMode3D()
+	rl.DrawCircle(i32(f32(rl.GetScreenWidth()) / 2.0 + g_mem.cursor.x), i32(f32(rl.GetScreenHeight()) / 2.0 + g_mem.cursor.y), 5.0, rl.ORANGE)
 
 	// NOTE: `fmt.ctprintf` uses the temp allocator. The temp allocator is
 	// cleared at the end of the frame by the main application, meaning inside
 	// `main_hot_reload.odin`, `main_release.odin` or `main_web_entry.odin`.
-	rl.DrawTextEx(g_mem.font, fmt.ctprintf("FPS: %v", rl.GetFPS()), { 10.0, 10.0 }, 32, 0.0, rl.WHITE)
+	rl.DrawTextEx(g_mem.font, fmt.ctprintf("FPS: %v", rl.GetFPS()), { 10.0, 10.0 }, 32, 0.0, rl.BLACK)
+	rl.DrawTextEx(g_mem.font, fmt.ctprintf("Vertices: %v", len(g_mem.vertices)), { 10.0, 50.0 }, 32, 0.0, rl.BLACK)
 
 	rl.EndDrawing()
 }
@@ -110,6 +166,7 @@ game_init_window :: proc() {
 	rl.InitWindow(1280, 720, "Odin + Raylib + Hot Reload template!")
 	rl.SetWindowPosition(200, 200)
 	rl.SetTargetFPS(500)
+	rl.SetExitKey(.ZERO) // TODO: Change this?
 }
 
 @(export)
@@ -117,12 +174,16 @@ game_init :: proc() {
 	g_mem = new(Game_Memory)
 
 	g_mem^ = Game_Memory {
-		some_number = 100,
-
 		// You can put textures, sounds and music in the `assets` folder. Those
 		// files will be part any release or web build.
-		player_texture = rl.LoadTexture("assets/round_cat.png"),
 		font = rl.LoadFontEx("assets/Inter/Inter-VariableFont_opsz,wght.ttf", 32, nil, 0),
+		camera = rl.Camera3D {
+			position = { 0.0, 2.0, 4.0 },
+			target = { 0.0, 2.0, 0.0 },
+			up = { 0.0, 1.0, 0.0 },
+			fovy = 60.0,
+		},
+		hover_index = -1,
 	}
 
 	game_hot_reloaded(g_mem)
@@ -135,6 +196,7 @@ game_should_close :: proc() -> bool {
 
 @(export)
 game_shutdown :: proc() {
+	delete(g_mem.vertices)
 	free(g_mem)
 }
 
