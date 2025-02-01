@@ -75,7 +75,7 @@ update :: proc() {
 			if rl.IsKeyDown(.SPACE) {
 				movement.z += 1.0
 			}
-			if rl.IsKeyDown(.LEFT_CONTROL) {
+			if rl.IsKeyDown(.LEFT_SHIFT) {
 				movement.z -= 1.0
 			}
 			movement = 0.1 * linalg.normalize0(movement)
