@@ -28,22 +28,34 @@ created.
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:math/linalg"
 import rl "vendor:raylib"
 
-PIXEL_WINDOW_HEIGHT :: 180
-
 View :: enum {
 	MOVE,
-	EDIT,
+	EDIT_VERTEX,
+	EDIT_EDGE,
+	EDIT_FACE,
+}
+
+HoverType :: enum {
+	VERTEX,
+	EDGE,
 }
 
 Game_Memory :: struct {
 	font: rl.Font,
 	camera: rl.Camera3D,
 	cursor: rl.Vector2,
+	cursor_world_point: rl.Vector3,
 	hover_index: int,
+	hover_type: HoverType,
 	vertices: [dynamic][3]f32,
+	edges: [dynamic][2]int,
+	faces: [dynamic][3]int,
+	new_edge_start: int,
+	new_face_start: int,
 	view: View,
 }
 
@@ -88,35 +100,183 @@ update :: proc() {
 				g_mem.camera,
 			)
 
+			// Hover check
 			g_mem.hover_index = -1
 			min_ray_distance := f32(1e500)
+
+			// Vertex hover
 			for point, i in g_mem.vertices {
 				ray_distance := linalg.vector_dot(point - ray.position, linalg.normalize(ray.direction))
 				point_distance := linalg.length(point - ray.position - ray_distance * linalg.normalize(ray.direction))
 
-				if ray_distance > 0 && point_distance < 0.05 {
-					if ray_distance < min_ray_distance {
-						min_ray_distance = ray_distance
-						g_mem.hover_index = i
+				if point_distance < 0.05 {
+					length := math.sqrt(0.05 * 0.05 - point_distance * point_distance)
+					if ray_distance + length > 0 {
+						ray_distance = max(0.0, ray_distance - length)
+						if ray_distance < min_ray_distance {
+							min_ray_distance = ray_distance
+							g_mem.hover_index = i
+							g_mem.hover_type = .VERTEX
+						}
 					}
 				}
 			}
 
-			if rl.IsMouseButtonPressed(.LEFT) && g_mem.hover_index == -1 {
-				new_point := ray.position + ray.direction * (-ray.position.y / ray.direction.y)
-				append(&g_mem.vertices, new_point)
+			// Edge hover
+			for edge, i in g_mem.edges {
+				a := g_mem.vertices[edge[0]]
+				b := g_mem.vertices[edge[1]] - g_mem.vertices[edge[0]]
+				c := ray.position
+				d := ray.direction
+
+				distance := f32(1e500)
+				ray_distance := f32(1e500)
+				
+				// Closest points on the lines
+				disc := linalg.vector_dot(d, d) * linalg.vector_dot(b, b) - linalg.vector_dot(b, d) * linalg.vector_dot(b, d)
+				if abs(disc) > 1e-6 {
+					t := (linalg.vector_dot(d, a - c) * linalg.dot(b, b) - linalg.vector_dot(b, a - c) * linalg.vector_dot(b, d))/ disc
+					s := (t * linalg.vector_dot(d, b) + linalg.vector_dot(c - a, b)) / linalg.vector_dot(b, b)
+					if 0 <= s && s <= 1 && t > 0 {
+						distance = linalg.distance(a + s * b, c + t * d)
+						ray_distance = t * linalg.length(d)
+					}
+				}
+
+				// Boundary checks
+				s1 := clamp(linalg.vector_dot(c - a, b) / linalg.vector_dot(b, b), 0.0, 1.0)
+				if distance > linalg.distance(a + s1 * b, c) {
+					distance = linalg.distance(a + s1 * b, c)
+					ray_distance = 0
+				}
+				t1 := max(linalg.vector_dot(a - c, d) / linalg.vector_dot(d, d), 0.0)
+				if distance > linalg.distance(a, c + t1 * d) {
+					distance = linalg.distance(a, c + t1 * d)
+					ray_distance = t1 * linalg.length(d)
+				}
+				t2 := max(linalg.vector_dot(b - c, d) / linalg.vector_dot(d, d), 0.0)
+				if distance > linalg.distance(b, c + t2 * d) {
+					distance = linalg.distance(b, c + t2 * d)
+					ray_distance = t2 * linalg.length(d)
+				}
+
+				if ray_distance > 0 && distance < 0.05 && ray_distance < min_ray_distance {
+					min_ray_distance = ray_distance
+					g_mem.hover_index = i
+					g_mem.hover_type = .EDGE
+				}
+			}
+
+			if g_mem.hover_index == -1 || g_mem.hover_type == .EDGE {
+				g_mem.cursor_world_point = ray.position + ray.direction * (-ray.position.y / ray.direction.y) // TODO: Allows placed vertex to be behind camera, fix this
+			} else {
+				g_mem.cursor_world_point = g_mem.vertices[g_mem.hover_index]
+			}
+
+			if g_mem.view == .EDIT_VERTEX {
+				if rl.IsMouseButtonPressed(.LEFT) && (g_mem.hover_index == -1 || g_mem.hover_type == .EDGE) {
+					append(&g_mem.vertices, g_mem.cursor_world_point)
+				}
+			} else if g_mem.view == .EDIT_EDGE {
+				if rl.IsMouseButtonPressed(.LEFT) && g_mem.hover_index != -1 && g_mem.hover_type == .VERTEX {
+					g_mem.new_edge_start = g_mem.hover_index
+				}
+				if rl.IsMouseButtonReleased(.LEFT) && g_mem.new_edge_start != -1 {
+					if g_mem.hover_index == -1 || g_mem.hover_type == .EDGE {
+						append(&g_mem.vertices, g_mem.cursor_world_point)
+						append(&g_mem.edges, [2]int { g_mem.new_edge_start, len(g_mem.vertices) - 1 })
+					} else if g_mem.hover_index != g_mem.new_edge_start {
+						new_edge : [2]int = { g_mem.new_edge_start, g_mem.hover_index }
+						if new_edge[0] > new_edge[1] {
+							new_edge = new_edge.yx
+						}
+						found := false
+						for e in g_mem.edges {
+							if e == new_edge {
+								found = true
+							}
+						}
+						if !found {
+							append(&g_mem.edges, new_edge)
+						}
+					}
+					g_mem.new_edge_start = -1
+				}
+			} else {
+				if rl.IsMouseButtonPressed(.LEFT) && g_mem.hover_index != -1 && g_mem.hover_type == .EDGE {
+					g_mem.new_face_start = g_mem.hover_index
+				}
+				if rl.IsMouseButtonReleased(.LEFT) && g_mem.new_face_start != -1 {
+					if g_mem.hover_index == -1 || g_mem.hover_type == .EDGE {
+						append(&g_mem.vertices, g_mem.cursor_world_point)
+						append(&g_mem.edges, [2]int { g_mem.edges[g_mem.new_face_start][0], len(g_mem.vertices) - 1 })
+						append(&g_mem.edges, [2]int { g_mem.edges[g_mem.new_face_start][1], len(g_mem.vertices) - 1 })
+						append(&g_mem.faces, [3]int { g_mem.edges[g_mem.new_face_start][0], g_mem.edges[g_mem.new_face_start][1], len(g_mem.vertices) - 1 })
+					} else if g_mem.hover_index != g_mem.edges[g_mem.new_face_start][0] && g_mem.hover_index != g_mem.edges[g_mem.new_face_start][1] {
+						for v in g_mem.edges[g_mem.new_face_start] {
+							new_edge : [2]int = { v, g_mem.hover_index }
+							if new_edge[0] > new_edge[1] {
+								new_edge = new_edge.yx
+							}
+							found := false
+							for e in g_mem.edges {
+								if e == new_edge {
+									found = true
+								}
+							}
+							if !found {
+								append(&g_mem.edges, new_edge)
+							}
+						}
+						new_face : [3]int
+						if g_mem.hover_index < g_mem.edges[g_mem.new_face_start][0] {
+							new_face = { g_mem.hover_index, g_mem.edges[g_mem.new_face_start][0], g_mem.edges[g_mem.new_face_start][1] }
+						} else if g_mem.hover_index < g_mem.edges[g_mem.new_face_start][1] {
+							new_face = { g_mem.edges[g_mem.new_face_start][0], g_mem.hover_index, g_mem.edges[g_mem.new_face_start][1] }
+						} else {
+							new_face = { g_mem.edges[g_mem.new_face_start][0], g_mem.edges[g_mem.new_face_start][1], g_mem.hover_index }
+						}
+						found := false
+						for f in g_mem.faces {
+							if new_face == f {
+								found = true
+							}
+						}
+						if !found {
+							append(&g_mem.faces, new_face)
+						}
+					}
+					g_mem.new_face_start = -1
+				}
 			}
 		}
 
-		if rl.IsKeyPressed(.M) {
-			g_mem.cursor = {}
+		if rl.IsKeyPressed(.ONE) {
+			g_mem.cursor = { 0.0, 0.0 }
 			g_mem.hover_index = -1
-			if g_mem.view == .MOVE {
-				g_mem.view = .EDIT
-			} else {
-				g_mem.view = .MOVE
-			}
+			g_mem.new_edge_start = -1
+			g_mem.new_face_start = -1
+			g_mem.view = .MOVE
 		}
+		if rl.IsKeyPressed(.TWO) {
+			g_mem.hover_index = -1
+			g_mem.new_edge_start = -1
+			g_mem.new_face_start = -1
+			g_mem.view = .EDIT_VERTEX
+		}
+		if rl.IsKeyPressed(.THREE) {
+			g_mem.hover_index = -1
+			g_mem.new_edge_start = -1
+			g_mem.new_face_start = -1
+			g_mem.view = .EDIT_EDGE
+		}
+		if rl.IsKeyPressed(.FOUR) {
+			g_mem.hover_index = -1
+			g_mem.new_edge_start = -1
+			g_mem.new_face_start = -1
+			g_mem.view = .EDIT_FACE
+		}
+
 		if rl.IsKeyPressed(.ESCAPE) {
 			rl.EnableCursor()
 		}
@@ -132,14 +292,30 @@ draw :: proc() {
 	rl.ClearBackground(rl.RAYWHITE)
 
 	rl.BeginMode3D(g_mem.camera)
-	rl.DrawTriangle3D({0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, rl.GRAY)
-	rl.DrawTriangle3D({0.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {1.0, 0.0, 0.0}, rl.GRAY) // TODO: Disable face culling
+	for face in g_mem.faces {
+		rl.DrawTriangle3D(g_mem.vertices[face[0]], g_mem.vertices[face[1]], g_mem.vertices[face[2]], rl.GRAY) // TODO: Disable face culling
+		rl.DrawTriangle3D(g_mem.vertices[face[0]], g_mem.vertices[face[2]], g_mem.vertices[face[1]], rl.GRAY)
+	}
+	for edge, i in g_mem.edges {
+		color := rl.BLACK
+		if g_mem.hover_index == i && g_mem.hover_type == .EDGE {
+			color = rl.RED
+		}
+		rl.DrawLine3D(g_mem.vertices[edge[0]], g_mem.vertices[edge[1]], color)
+	}
 	for point, i in g_mem.vertices {
 		color := rl.BLACK
-		if g_mem.hover_index == i {
+		if g_mem.hover_index == i && g_mem.hover_type == .VERTEX {
 			color = rl.RED
 		}
 		rl.DrawSphere(point, 0.05, color)
+	}
+	if g_mem.new_edge_start != -1 {
+		rl.DrawLine3D(g_mem.vertices[g_mem.new_edge_start], g_mem.cursor_world_point, rl.RED)
+	}
+	if g_mem.new_face_start != -1 {
+		rl.DrawTriangle3D(g_mem.vertices[g_mem.edges[g_mem.new_face_start][0]], g_mem.vertices[g_mem.edges[g_mem.new_face_start][1]], g_mem.cursor_world_point, rl.RED)
+		rl.DrawTriangle3D(g_mem.vertices[g_mem.edges[g_mem.new_face_start][1]], g_mem.vertices[g_mem.edges[g_mem.new_face_start][0]], g_mem.cursor_world_point, rl.RED)
 	}
 	rl.DrawGrid(50, 1.0)
 	rl.EndMode3D()
@@ -150,6 +326,9 @@ draw :: proc() {
 	// `main_hot_reload.odin`, `main_release.odin` or `main_web_entry.odin`.
 	rl.DrawTextEx(g_mem.font, fmt.ctprintf("FPS: %v", rl.GetFPS()), { 10.0, 10.0 }, 32, 0.0, rl.BLACK)
 	rl.DrawTextEx(g_mem.font, fmt.ctprintf("Vertices: %v", len(g_mem.vertices)), { 10.0, 50.0 }, 32, 0.0, rl.BLACK)
+	rl.DrawTextEx(g_mem.font, fmt.ctprintf("Edges: %v", len(g_mem.edges)), { 10.0, 90.0 }, 32, 0.0, rl.BLACK)
+	rl.DrawTextEx(g_mem.font, fmt.ctprintf("Faces: %v", len(g_mem.faces)), { 10.0, 130.0 }, 32, 0.0, rl.BLACK)
+	rl.DrawTextEx(g_mem.font, fmt.ctprintf("View: %v", g_mem.view), { 10.0, 170.0 }, 32, 0.0, rl.BLACK)
 
 	rl.EndDrawing()
 }
@@ -184,6 +363,8 @@ game_init :: proc() {
 			fovy = 60.0,
 		},
 		hover_index = -1,
+		new_edge_start = -1,
+		new_face_start = -1,
 	}
 
 	game_hot_reloaded(g_mem)
@@ -197,6 +378,8 @@ game_should_close :: proc() -> bool {
 @(export)
 game_shutdown :: proc() {
 	delete(g_mem.vertices)
+	delete(g_mem.edges)
+	delete(g_mem.faces)
 	free(g_mem)
 }
 
