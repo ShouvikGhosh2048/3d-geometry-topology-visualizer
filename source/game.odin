@@ -317,8 +317,16 @@ draw :: proc() {
 		rl.DrawTriangle3D(g_mem.vertices[g_mem.edges[g_mem.new_face_start][0]], g_mem.vertices[g_mem.edges[g_mem.new_face_start][1]], g_mem.cursor_world_point, rl.RED)
 		rl.DrawTriangle3D(g_mem.vertices[g_mem.edges[g_mem.new_face_start][1]], g_mem.vertices[g_mem.edges[g_mem.new_face_start][0]], g_mem.cursor_world_point, rl.RED)
 	}
-	rl.DrawGrid(50, 1.0)
+	// Draw grid below y = 0.
+	for i in -25..=25 {
+		rl.DrawLine3D({ -25, -0.01, f32(i) }, { 25, -0.01, f32(i) }, rl.GRAY)
+		rl.DrawLine3D({ f32(i), -0.01, -25 }, { f32(i), -0.01, 25 }, rl.GRAY)
+	}
 	rl.EndMode3D()
+	// Draw hover indicator for vertices.
+	if g_mem.hover_index != -1 && g_mem.hover_type == .VERTEX {
+		rl.DrawCircle(i32(f32(rl.GetScreenWidth()) / 2.0 + g_mem.cursor.x), i32(f32(rl.GetScreenHeight()) / 2.0 + g_mem.cursor.y), 7.0, rl.RED)
+	}
 	rl.DrawCircle(i32(f32(rl.GetScreenWidth()) / 2.0 + g_mem.cursor.x), i32(f32(rl.GetScreenHeight()) / 2.0 + g_mem.cursor.y), 5.0, rl.ORANGE)
 
 	// NOTE: `fmt.ctprintf` uses the temp allocator. The temp allocator is
