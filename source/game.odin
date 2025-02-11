@@ -54,6 +54,8 @@ Game_Memory :: struct {
 	vertices: [dynamic][3]f32,
 	edges: [dynamic][2]int,
 	faces: [dynamic][3]int,
+	drag_vertex: int,
+	drag_plane_distance: f32,
 	new_edge_start: int,
 	new_face_start: int,
 	view: View,
@@ -167,19 +169,46 @@ update :: proc() {
 				}
 			}
 
-			if g_mem.hover_index == -1 || g_mem.hover_type == .EDGE {
-				g_mem.cursor_world_point = ray.position + ray.direction * (-ray.position.y / ray.direction.y) // TODO: Allows placed vertex to be behind camera, fix this
+			if g_mem.hover_index != -1 && g_mem.hover_type == .VERTEX && g_mem.drag_vertex == -1 {
+				g_mem.cursor_world_point = g_mem.vertices[g_mem.hover_index] // Snap to vertex
+			} else if g_mem.drag_vertex != -1 || g_mem.new_edge_start != -1 || g_mem.new_face_start != -1 {
+				c := g_mem.drag_plane_distance / linalg.dot(ray.direction, linalg.normalize0(g_mem.camera.target - g_mem.camera.position))
+				g_mem.cursor_world_point = g_mem.camera.position + c * ray.direction
+			} else if g_mem.hover_index != -1 {
+				// TODO: Note that we choose vertices and edges for world point even if they are on the opposite side of the plane.
+				g_mem.cursor_world_point = ray.position + min_ray_distance * ray.direction
 			} else {
-				g_mem.cursor_world_point = g_mem.vertices[g_mem.hover_index]
+				g_mem.cursor_world_point = ray.position + ray.direction * (-ray.position.y / ray.direction.y)
 			}
 
 			if g_mem.view == .EDIT_VERTEX {
-				if rl.IsMouseButtonPressed(.LEFT) && (g_mem.hover_index == -1 || g_mem.hover_type == .EDGE) {
-					append(&g_mem.vertices, g_mem.cursor_world_point)
+				if rl.IsMouseButtonPressed(.LEFT) {
+					vertex_hover := g_mem.hover_index != -1 && g_mem.hover_type == .VERTEX
+					if vertex_hover {
+						g_mem.drag_vertex = g_mem.hover_index
+						g_mem.drag_plane_distance = linalg.dot(
+							g_mem.vertices[g_mem.drag_vertex] - g_mem.camera.position,
+							linalg.normalize0(g_mem.camera.target - g_mem.camera.position),
+						)
+					} else {
+						append(&g_mem.vertices, g_mem.cursor_world_point)
+					}
+				}
+				if g_mem.drag_vertex != -1 {
+					// TODO: We are moving a point which can affect hover.
+					// How do we handle this?
+					g_mem.vertices[g_mem.drag_vertex] = g_mem.cursor_world_point
+				}
+				if rl.IsMouseButtonReleased(.LEFT) {
+					g_mem.drag_vertex = -1
 				}
 			} else if g_mem.view == .EDIT_EDGE {
 				if rl.IsMouseButtonPressed(.LEFT) && g_mem.hover_index != -1 && g_mem.hover_type == .VERTEX {
 					g_mem.new_edge_start = g_mem.hover_index
+					g_mem.drag_plane_distance = linalg.dot(
+						g_mem.vertices[g_mem.new_edge_start] - g_mem.camera.position,
+						linalg.normalize0(g_mem.camera.target - g_mem.camera.position),
+					)
 				}
 				if rl.IsMouseButtonReleased(.LEFT) && g_mem.new_edge_start != -1 {
 					if g_mem.hover_index == -1 || g_mem.hover_type == .EDGE {
@@ -205,6 +234,10 @@ update :: proc() {
 			} else {
 				if rl.IsMouseButtonPressed(.LEFT) && g_mem.hover_index != -1 && g_mem.hover_type == .EDGE {
 					g_mem.new_face_start = g_mem.hover_index
+					g_mem.drag_plane_distance = linalg.dot(
+						g_mem.cursor_world_point - g_mem.camera.position,
+						linalg.normalize0(g_mem.camera.target - g_mem.camera.position),
+					)
 				}
 				if rl.IsMouseButtonReleased(.LEFT) && g_mem.new_face_start != -1 {
 					if g_mem.hover_index == -1 || g_mem.hover_type == .EDGE {
@@ -254,24 +287,28 @@ update :: proc() {
 		if rl.IsKeyPressed(.ONE) {
 			g_mem.cursor = { 0.0, 0.0 }
 			g_mem.hover_index = -1
+			g_mem.drag_vertex = -1
 			g_mem.new_edge_start = -1
 			g_mem.new_face_start = -1
 			g_mem.view = .MOVE
 		}
 		if rl.IsKeyPressed(.TWO) {
 			g_mem.hover_index = -1
+			g_mem.drag_vertex = -1
 			g_mem.new_edge_start = -1
 			g_mem.new_face_start = -1
 			g_mem.view = .EDIT_VERTEX
 		}
 		if rl.IsKeyPressed(.THREE) {
 			g_mem.hover_index = -1
+			g_mem.drag_vertex = -1
 			g_mem.new_edge_start = -1
 			g_mem.new_face_start = -1
 			g_mem.view = .EDIT_EDGE
 		}
 		if rl.IsKeyPressed(.FOUR) {
 			g_mem.hover_index = -1
+			g_mem.drag_vertex = -1
 			g_mem.new_edge_start = -1
 			g_mem.new_face_start = -1
 			g_mem.view = .EDIT_FACE
@@ -371,6 +408,7 @@ game_init :: proc() {
 			fovy = 60.0,
 		},
 		hover_index = -1,
+		drag_vertex = -1,
 		new_edge_start = -1,
 		new_face_start = -1,
 	}
